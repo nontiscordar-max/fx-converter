@@ -1,0 +1,30 @@
+FX CONVERTER: PUT IT ONLINE AND INSTALL ON ANDROID
+==================================================
+
+A. Put it online (free, about 10 minutes, one time only)
+   1. Unzip fx-converter.zip on your computer.
+   2. Go to github.com and sign up (free) or sign in.
+   3. Click "+" (top right) > "New repository". Name it fx-converter,
+      choose Public, tick "Add a README file", click "Create repository".
+   4. Click "Add file" > "Upload files". Drag in EVERYTHING from the
+      unzipped folder: index.html, manifest.json, sw.js and the icons
+      folder. Click "Commit changes".
+   5. Go to Settings > Pages. Under "Branch" choose "main" and "/ (root)",
+      then click Save.
+   6. Wait 1-2 minutes and refresh that page. It shows your app address,
+      like https://YOUR-NAME.github.io/fx-converter/
+
+B. Install on your Android phone
+   1. Open that address in Chrome on the phone.
+   2. Tap the menu (three dots) > "Install app" (or "Add to Home screen").
+   3. The FX icon appears with your other apps. It opens full screen.
+
+Notes
+   - Rates are fetched live each time you open the app (the source updates
+     once a day). The status shows LIVE, SAVED RATES or OFFLINE.
+   - Works offline using the last rates it downloaded.
+   - The address is public, but the app only shows exchange rates and
+     stores nothing about you except your last currency pair on the phone.
+   - To share it with staff, send them the address; they install the same way.
+   - Rates source: Exchange Rate API (open.er-api.com), mid-market rates.
+     Banks add a margin, so use "Use my bank's rates" for exact quotes.

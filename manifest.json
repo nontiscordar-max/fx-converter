@@ -1,0 +1,16 @@
+{
+  "name": "FX Converter",
+  "short_name": "FX",
+  "description": "Currency converter with daily mid-market rates for SGD, MYR, GBP, USD and more.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#eef2f0",
+  "theme_color": "#0f6b52",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
