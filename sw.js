@@ -1,5 +1,5 @@
 // Keeps the app working offline. Rates themselves are saved by the page, not cached here.
-const CACHE = "fx-app-v3";
+const CACHE = "fx-app-v4";
 const SHELL = ["./", "index.html", "manifest.json", "icons/icon-192.png", "icons/icon-512.png", "icons/maskable-512.png"];
 
 self.addEventListener("install", e => {
