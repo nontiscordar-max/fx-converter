@@ -1,5 +1,5 @@
 // Keeps the app working offline. Rates themselves are saved by the page, not cached here.
-const CACHE = "fx-app-v1";
+const CACHE = "fx-app-v2";
 const SHELL = ["./", "index.html", "manifest.json", "icons/icon-192.png", "icons/icon-512.png", "icons/maskable-512.png"];
 
 self.addEventListener("install", e => {
@@ -16,7 +16,7 @@ self.addEventListener("activate", e => {
 self.addEventListener("fetch", e => {
   const url = new URL(e.request.url);
   if (e.request.method !== "GET") return;
-  if (url.hostname === "open.er-api.com") return; // always live; page handles offline fallback
+  if (url.hostname === "open.er-api.com" || url.hostname === "api.coinbase.com") return; // always live; page handles offline fallback
 
   // App files: network first so updates arrive, cache when offline
   if (url.origin === location.origin) {

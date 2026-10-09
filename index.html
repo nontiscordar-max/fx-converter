@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>FX Converter</title>
-<meta name="description" content="Currency converter with live daily mid-market rates.">
+<meta name="description" content="Currency converter with live rates that refresh every minute.">
 <meta name="theme-color" content="#0f6b52" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0f1714" media="(prefers-color-scheme: dark)">
 <link rel="manifest" href="manifest.json">
@@ -104,13 +104,13 @@ footer a{color:var(--muted)}
   <section class="card">
     <details>
       <summary>Use my bank's rates</summary>
-      <p class="note" style="margin-top:10px">Rates are units per 1 US dollar. These are mid-market rates; banks and money changers add a margin, so their rate will differ. Type your bank's rate to override one. Edited boxes are outlined, and edits clear when the next day's rates arrive.</p>
+      <p class="note" style="margin-top:10px">Rates are units per 1 US dollar. These are mid-market rates; banks and money changers add a margin, so their rate will differ. Type your bank's rate to override one. Edited boxes are outlined, and edits last until the end of the day.</p>
       <div class="rates" id="rates"></div>
       <button class="btn" id="reset" type="button">Clear my edits</button>
     </details>
   </section>
 
-  <footer><a href="https://www.exchangerate-api.com" target="_blank" rel="noopener">Rates by Exchange Rate API</a> · mid-market, updated daily</footer>
+  <footer>Live rates: <a href="https://www.coinbase.com" target="_blank" rel="noopener">Coinbase</a> exchange-rate feed · backup: <a href="https://www.exchangerate-api.com" target="_blank" rel="noopener">Rates by Exchange Rate API</a></footer>
 </div>
 
 <script>
@@ -121,7 +121,9 @@ const codes = Object.keys(NAMES);
 /* Fallback used only on very first open with no internet */
 const BUNDLED = {date:"2026-10-08T00:02:31Z", rates:{SGD:1.279676,MYR:4.087618,GBP:0.756549,USD:1,EUR:0.892949,TWD:31.869038,
   HKD:7.847591,AUD:1.436289,CNY:6.712457,JPY:158.100522,THB:33.659293,IDR:17875.712075,INR:96.830256,PHP:62.808616}};
-const API = "https://open.er-api.com/v6/latest/USD";
+const LIVE_API = "https://api.coinbase.com/v2/exchange-rates?currency=USD"; // updates about every minute
+const DAILY_API = "https://open.er-api.com/v6/latest/USD";                  // backup, updates once a day
+const AUTO_MS = 60000;
 
 const $ = id => document.getElementById(id);
 const store = {
@@ -133,7 +135,7 @@ const store = {
 let data = store.get("fx-data", BUNDLED);     // {date, rates, fetchedAt?}
 let mode = data === BUNDLED ? "bundled" : "saved";
 let edits = {};
-function loadEdits(){const s=store.get("fx-edits",{});edits = s.d===data.date ? (s.r||{}) : {};}
+function loadEdits(){const s=store.get("fx-edits",{});edits = s.day===(data.date||"").slice(0,10) ? (s.r||{}) : {};}
 loadEdits();
 
 const R = c => (edits[c] > 0 ? edits[c] : data.rates[c]);
@@ -154,14 +156,15 @@ function parse(s){const v=parseFloat(String(s).replace(/[^0-9.\-]/g,""));return 
 const convert = (v,f,t) => v / R(f) * R(t);
 
 function renderStatus(){
-  const d = new Date(data.date);
-  const when = d.toLocaleString("en-GB",{day:"numeric",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit",timeZone:"Asia/Singapore"}) + " SGT";
-  const old = (Date.now()-d)/36e5 > 48;
-  const pill=$("pill");
-  if (mode==="live" && !old){pill.textContent="Live";pill.className="pill";}
-  else if (mode==="live"){pill.textContent="Source not updated";pill.className="pill warn";}
-  else {pill.textContent = navigator.onLine ? "Saved rates" : "Offline";pill.className = old ? "pill warn" : "pill";}
-  $("asof").textContent = "Rates as of " + when + (Object.keys(edits).length ? " · using some of your edits" : "");
+  const d=new Date(data.date);
+  const sameDay = d.toDateString()===new Date().toDateString();
+  const t = d.toLocaleString("en-GB", sameDay ? {hour:"2-digit",minute:"2-digit",second:"2-digit",timeZone:"Asia/Singapore"}
+                                             : {day:"numeric",month:"short",hour:"2-digit",minute:"2-digit",timeZone:"Asia/Singapore"});
+  const pill=$("pill"), ageMin=(Date.now()-d)/6e4;
+  if(mode==="live"){pill.textContent="Live";pill.className="pill";$("asof").textContent="Updated "+t+" SGT · refreshes every minute";}
+  else if(mode==="daily"){pill.textContent="Daily rate";pill.className="pill warn";$("asof").textContent="Live feed unavailable · daily rate from "+t+" SGT";}
+  else {pill.textContent=navigator.onLine?"Saved rates":"Offline";pill.className="pill warn";$("asof").textContent="Last rates "+t+" SGT";}
+  if(Object.keys(edits).length) $("asof").textContent+=" · using some of your edits";
 }
 
 function render(){
@@ -185,26 +188,37 @@ function renderRates(){
     `<div><label for="r-${c}">${c} per USD</label><input id="r-${c}" data-c="${c}" type="text" inputmode="decimal" class="${edits[c]?'edited':''}" value="${R(c)}"></div>`).join("");
 }
 
-async function fetchRates(){
-  const btn=$("refresh"); btn.disabled=true; btn.textContent="Refreshing…";
+async function getJSON(url){
+  const ctl=new AbortController(); const tm=setTimeout(()=>ctl.abort(),8000);
+  try{ const res=await fetch(url,{cache:"no-store",signal:ctl.signal}); if(!res.ok) throw new Error("HTTP "+res.status); return await res.json(); }
+  finally{ clearTimeout(tm); }
+}
+function pick(src){ const out={}; for(const c of codes){ const r=c==="USD"?1:parseFloat(src[c]); if(!(r>0)) throw new Error("missing "+c); out[c]=r; } return out; }
+let busy=false;
+async function fetchRates(manual){
+  if(busy) return; busy=true;
+  const btn=$("refresh"); if(manual){btn.disabled=true; btn.textContent="Refreshing…";}
   try{
-    const ctl = new AbortController(); const tm=setTimeout(()=>ctl.abort(),8000);
-    const res = await fetch(API,{cache:"no-store",signal:ctl.signal}); clearTimeout(tm);
-    if(!res.ok) throw new Error("HTTP "+res.status);
-    const j = await res.json();
-    if (j.result!=="success") throw new Error("bad result");
-    const rates = {};
-    for (const c of codes){ const r=j.rates[c]; if(!(r>0)) throw new Error("missing "+c); rates[c]=r; }
-    const date = new Date(j.time_last_update_unix*1000).toISOString();
-    data = {date, rates, fetchedAt:new Date().toISOString()};
-    store.set("fx-data", data);
-    mode = "live";
-    loadEdits();
-    renderRates(); render();
+    let next;
+    try{
+      const j=await getJSON(LIVE_API);
+      next={date:new Date().toISOString(), rates:pick(j.data.rates), src:"live"};
+    }catch(e){
+      const j=await getJSON(DAILY_API);
+      if(j.result!=="success") throw new Error("bad result");
+      next={date:new Date(j.time_last_update_unix*1000).toISOString(), rates:pick(j.rates), src:"daily"};
+    }
+    next.fetchedAt=new Date().toISOString();
+    const prevDay=(data.date||"").slice(0,10);
+    data=next; store.set("fx-data",data); mode=data.src==="live"?"live":"daily";
+    // keep the user's bank-rate edits for the rest of the same day
+    const s=store.get("fx-edits",{}); edits = (s.day===data.date.slice(0,10)) ? (s.r||{}) : {};
+    if(!document.activeElement || !document.activeElement.closest("#rates")) renderRates();
+    render();
   }catch(e){
-    if (mode!=="live") mode = data===BUNDLED ? "bundled" : "saved";
+    if(mode==="live"||mode==="daily") mode="saved";
     renderStatus();
-  }finally{ btn.disabled=false; btn.textContent="Refresh"; }
+  }finally{ busy=false; btn.disabled=false; btn.textContent="Refresh"; }
 }
 
 $("rates").addEventListener("input",e=>{
@@ -212,22 +226,22 @@ $("rates").addEventListener("input",e=>{
   const v=parse(e.target.value);
   if (v>0 && Math.abs(v-data.rates[c])>1e-9){edits[c]=v; e.target.classList.add("edited");}
   else {delete edits[c]; e.target.classList.remove("edited");}
-  store.set("fx-edits",{d:data.date,r:edits});
+  store.set("fx-edits",{day:data.date.slice(0,10),r:edits});
   render();
 });
 $("reset").addEventListener("click",()=>{edits={};store.del("fx-edits");renderRates();render();});
 $("swap").addEventListener("click",()=>{[fromSel.value,toSel.value]=[toSel.value,fromSel.value];render();});
-$("refresh").addEventListener("click",fetchRates);
+$("refresh").addEventListener("click",()=>fetchRates(true));
 $("board").addEventListener("click",e=>{const l=e.target.closest(".line");if(l&&l.dataset.c!==fromSel.value){toSel.value=l.dataset.c;render();}});
 $("board").addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();e.target.click();}});
 [amt,fromSel,toSel].forEach(el=>el.addEventListener("input",render));
 window.addEventListener("online",fetchRates);
 window.addEventListener("offline",renderStatus);
-document.addEventListener("visibilitychange",()=>{
-  if(document.visibilityState==="visible" && (!data.fetchedAt || Date.now()-new Date(data.fetchedAt) > 3*36e5)) fetchRates();
-});
+document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible") fetchRates(); });
+setInterval(()=>{ if(document.visibilityState==="visible") fetchRates(); }, AUTO_MS);
+setInterval(renderStatus, 15000);
 
-renderRates(); render(); fetchRates();
+renderRates(); render(); fetchRates(true);
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}));
